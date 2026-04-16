@@ -1,0 +1,40 @@
+# Dart Throw Elbow Angle Detection — Configuration
+# Tune HSV ranges with: python calibrate.py <video_path>
+
+video_path: "videos/throw01.mp4"
+
+# HSV range for colored tape markers (use calibrate.py to find these)
+hsv_lower: [35, 100, 100]
+hsv_upper: [85, 255, 255]
+
+# Second HSV range (for red tape — red wraps around H=0/180 in OpenCV)
+# Uncomment both lines if using red markers:
+# hsv_lower2: [0, 100, 100]
+# hsv_upper2: [10, 255, 255]
+hsv_lower2: null
+hsv_upper2: null
+
+# Contour area filter (pixels) — removes noise and large false positives
+min_marker_area: 50
+max_marker_area: 5000
+
+# Tracking
+max_jump: 100              # max pixel distance a marker can move between frames
+thrower_faces_right: true  # set false if the thrower faces left in the video
+
+# Smoothing (Savitzky-Golay filter on position tracks)
+smoothing_window: 7        # must be odd
+smoothing_polyorder: 2
+
+# Release detection
+velocity_peak_prominence: 50.0  # minimum prominence for wrist velocity peak
+frames_after_peak: 3            # release = peak + this offset
+velocity_component: "speed"     # "speed" (euclidean), "x", or "y"
+
+# Region of interest (null to use full frame)
+# roi: [x, y, width, height]
+roi: null
+
+# Output
+output_video: "output/annotated.mp4"
+show_preview: true

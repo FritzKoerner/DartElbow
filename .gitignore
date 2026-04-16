@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.firecrawl/
+output/
+videos/
+*.mp4
+*.avi
+.claude/

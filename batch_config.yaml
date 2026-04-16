@@ -1,0 +1,25 @@
+# Batch-Kalibrierung — HSV-Werte pro Video
+# Jeder Eintrag überschreibt die Werte aus config.yaml für das jeweilige Video.
+# Nicht aufgeführte Videos verwenden die Standardwerte aus config.yaml.
+# Nicht aufgeführte Felder innerhalb eines Eintrags verwenden ebenfalls die Standardwerte.
+#
+# Unterstützte Felder pro Video:
+#   hsv_lower, hsv_upper, hsv_lower2, hsv_upper2,
+#   min_marker_area, max_marker_area, roi, thrower_faces_right
+#
+# Beispiel:
+#
+# wurf_01.mp4:
+#   hsv_lower: [35, 100, 100]
+#   hsv_upper: [85, 255, 255]
+#
+# wurf_02.mp4:
+#   hsv_lower: [170, 100, 100]
+#   hsv_upper: [180, 255, 255]
+#   hsv_lower2: [0, 100, 100]
+#   hsv_upper2: [10, 255, 255]
+#
+# wurf_03.mp4:
+#   hsv_lower: [100, 150, 100]
+#   hsv_upper: [130, 255, 255]
+#   thrower_faces_right: false

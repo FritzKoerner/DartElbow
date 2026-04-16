@@ -40,6 +40,11 @@ def parse_args():
         help="Process all videos in a folder and output a CSV with results",
     )
     parser.add_argument(
+        "--batch-config",
+        default="batch_config.yaml",
+        help="Per-video HSV overrides for batch mode (default: batch_config.yaml)",
+    )
+    parser.add_argument(
         "--output-csv",
         default="results.csv",
         help="CSV output path for batch mode (default: results.csv)",
@@ -106,12 +111,17 @@ def analyze_video(video_path, cfg, write_video=True, show_preview=False):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"  Error: Cannot open video: {video_path}")
-        return None
+        return {"error": "Cannot open video file"}
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+
+    if fps == 0:
+        cap.release()
+        print(f"  Error: Invalid video (0 FPS)")
+        return {"error": "Invalid video (0 FPS)"}
 
     print(f"  FPS: {fps:.1f}, Frames: {total_frames}, Duration: {total_frames/fps:.1f}s")
 
@@ -166,7 +176,7 @@ def analyze_video(video_path, cfg, write_video=True, show_preview=False):
 
     if not initialized:
         print("  Error: Could not detect 3 markers in any frame.")
-        return None
+        return {"error": "Could not detect 3 markers in any frame"}
 
     detection_rate = 100 * detected_count / frame_idx
     print(f"  Markers detected in {detected_count}/{frame_idx} frames ({detection_rate:.1f}%)")
@@ -282,13 +292,33 @@ def run_single(args, cfg):
     print(f"Video: {video_path}")
     result = analyze_video(video_path, cfg, write_video=True, show_preview=show_preview)
 
-    if result is None:
-        print("\nAnalysis failed. Run: python calibrate.py <video_path>")
+    if "error" in result:
+        print(f"\nAnalysis failed: {result['error']}")
+        print("Run: python calibrate.py <video_path>")
         sys.exit(1)
 
     if result["angle_min"] is not None:
         print(f"  Angle range: {result['angle_min']:.1f} - {result['angle_max']:.1f} degrees")
     print("\nDone.")
+
+
+def load_batch_config(path):
+    """Load per-video overrides from batch config file.
+
+    Returns a dict mapping video filename to override dict, or empty dict.
+    """
+    if not os.path.isfile(path):
+        return {}
+    with open(path, "r") as f:
+        data = yaml.safe_load(f)
+    return data if isinstance(data, dict) else {}
+
+
+def merge_config(base_cfg, overrides):
+    """Return a copy of base_cfg with overrides applied."""
+    merged = dict(base_cfg)
+    merged.update(overrides)
+    return merged
 
 
 def run_batch(args, cfg):
@@ -308,30 +338,42 @@ def run_batch(args, cfg):
         print(f"  Supported formats: {', '.join(VIDEO_EXTENSIONS)}")
         sys.exit(1)
 
+    batch_overrides = load_batch_config(args.batch_config)
+    has_overrides = bool(batch_overrides)
+
     print(f"Batch mode: {len(video_files)} videos in {folder}")
+    if has_overrides:
+        matched = [f for f in video_files if f in batch_overrides]
+        print(f"Batch config: {args.batch_config} ({len(matched)}/{len(video_files)} videos with custom HSV)")
     print(f"Output CSV: {args.output_csv}")
     print()
 
     results = []
     for i, filename in enumerate(video_files, 1):
         video_path = os.path.join(folder, filename)
-        print(f"[{i}/{len(video_files)}] {filename}")
-        result = analyze_video(video_path, cfg, write_video=False, show_preview=False)
-        if result is not None:
-            result["video"] = filename
-            results.append(result)
+        video_cfg = merge_config(cfg, batch_overrides.get(filename, {}))
+        if filename in batch_overrides:
+            print(f"[{i}/{len(video_files)}] {filename} (custom HSV)")
         else:
+            print(f"[{i}/{len(video_files)}] {filename}")
+        result = analyze_video(video_path, video_cfg, write_video=False, show_preview=False)
+        if "error" in result:
             results.append({
                 "video": filename,
-                "fps": None,
-                "total_frames": None,
-                "detection_rate": None,
+                "error": result["error"],
+                "release_angle": None,
                 "release_frame": None,
                 "release_time": None,
-                "release_angle": None,
                 "angle_min": None,
                 "angle_max": None,
+                "detection_rate": None,
+                "fps": None,
+                "total_frames": None,
             })
+        else:
+            result["video"] = filename
+            result["error"] = ""
+            results.append(result)
         print()
 
     # Write CSV
@@ -345,6 +387,7 @@ def run_batch(args, cfg):
         "detection_rate",
         "fps",
         "total_frames",
+        "error",
     ]
     with open(args.output_csv, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -362,13 +405,18 @@ def run_batch(args, cfg):
     print(f"Results written to {args.output_csv}")
 
     # Print summary table
+    errors = [r for r in results if r.get("error")]
     successful = [r for r in results if r["release_angle"] is not None]
-    failed = len(results) - len(successful)
+    no_release = [r for r in results if not r.get("error") and r["release_angle"] is None]
     print(f"\nSummary: {len(successful)}/{len(results)} videos analyzed successfully", end="")
-    if failed:
-        print(f" ({failed} failed)")
+    if errors:
+        print(f" ({len(errors)} failed)")
+        for r in errors:
+            print(f"  - {r['video']}: {r['error']}")
     else:
         print()
+    if no_release:
+        print(f"  {len(no_release)} video(s) analyzed but no release detected")
 
     if successful:
         angles = [r["release_angle"] for r in successful]

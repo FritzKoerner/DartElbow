@@ -1,17 +1,21 @@
 """Interactive HSV range tuner for colored tape markers.
 
 Opens a video frame and provides trackbars to adjust HSV thresholds
-in real-time. Press 's' to print the final values, 'q' to quit.
+in real-time. Press 's' to print values, 'b' to save to batch config,
+'q' to quit.
 
 Usage:
     python calibrate.py <video_path> [--frame N]
+    python calibrate.py <video_path> --save-to batch_config.yaml
 """
 
 import argparse
+import os
 import sys
 
 import cv2
 import numpy as np
+import yaml
 
 
 def nothing(_):
@@ -19,11 +23,36 @@ def nothing(_):
     pass
 
 
+def save_to_batch_config(path, video_name, hsv_lower, hsv_upper):
+    """Append or update HSV values for a video in the batch config file."""
+    data = {}
+    if os.path.isfile(path):
+        with open(path, "r") as f:
+            loaded = yaml.safe_load(f)
+            if isinstance(loaded, dict):
+                data = loaded
+
+    data[video_name] = {
+        "hsv_lower": hsv_lower,
+        "hsv_upper": hsv_upper,
+    }
+
+    with open(path, "w") as f:
+        yaml.dump(data, f, default_flow_style=None, sort_keys=False)
+
+    print(f"Saved HSV values for '{video_name}' to {path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description="Tune HSV ranges for marker detection")
     parser.add_argument("video", help="Path to video file")
     parser.add_argument(
         "--frame", type=int, default=0, help="Frame number to use (default: 0)"
+    )
+    parser.add_argument(
+        "--save-to",
+        default="batch_config.yaml",
+        help="Batch config file to save to with 'b' key (default: batch_config.yaml)",
     )
     args = parser.parse_args()
 
@@ -43,6 +72,8 @@ def main():
         print(f"Error: Cannot read frame {args.frame}")
         sys.exit(1)
 
+    video_name = os.path.basename(args.video)
+
     # Create windows
     cv2.namedWindow("Trackbars", cv2.WINDOW_NORMAL)
     cv2.namedWindow("Result", cv2.WINDOW_NORMAL)
@@ -56,7 +87,7 @@ def main():
     cv2.createTrackbar("V High", "Trackbars", 255, 255, nothing)
 
     print("Adjust trackbars until exactly 3 marker blobs are visible.")
-    print("Press 's' to save values, 'q' to quit.")
+    print("Press 's' to print values, 'b' to save to batch config, 'q' to quit.")
     print()
 
     hsv = cv2.cvtColor(frame, cv2.COLOR_BGR2HSV)
@@ -116,6 +147,13 @@ def main():
             print(f"hsv_lower: [{h_lo}, {s_lo}, {v_lo}]")
             print(f"hsv_upper: [{h_hi}, {s_hi}, {v_hi}]")
             print()
+        elif key == ord("b"):
+            save_to_batch_config(
+                args.save_to,
+                video_name,
+                [h_lo, s_lo, v_lo],
+                [h_hi, s_hi, v_hi],
+            )
 
     cv2.destroyAllWindows()
 

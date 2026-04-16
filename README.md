@@ -65,10 +65,13 @@ python calibrate.py videos/mein_wurf.mp4 --frame 50
 
 Es öffnet sich ein Fenster mit Schiebereglern für die HSV-Werte. Stelle die Regler so ein, dass **genau 3 Marker** im Maskenbild sichtbar sind (weiße Flecken auf schwarzem Hintergrund). Die Anzeige „Markers found: 3" sollte grün sein.
 
-- Drücke **`s`**, um die Werte auszugeben — kopiere sie in `config.yaml`
+- Drücke **`s`**, um die Werte in der Konsole auszugeben — kopiere sie in `config.yaml`
+- Drücke **`b`**, um die Werte direkt in `batch_config.yaml` zu speichern (der Videoname wird automatisch zugeordnet)
 - Drücke **`q`**, um zu beenden
 
 **Tipp für dich, Lina:** Probiere verschiedene Frames aus (`--frame 0`, `--frame 100`, etc.), um sicherzustellen, dass die Werte über das ganze Video funktionieren.
+
+**Tipp für den Batch-Modus, Lina:** Wenn du mehrere Videos mit unterschiedlichen Lichtverhältnissen hast, kalibriere jedes Video einzeln und drücke jeweils **`b`** — die Werte werden automatisch in `batch_config.yaml` gesammelt.
 
 ### 3. Pipeline ausführen (Einzelvideo)
 
@@ -132,6 +135,7 @@ Die CSV-Datei enthält folgende Spalten:
 | `detection_rate` | Anteil der Frames mit erfolgreicher Marker-Erkennung (%) |
 | `fps` | Framerate des Videos |
 | `total_frames` | Gesamtanzahl Frames |
+| `error` | Fehlermeldung (leer wenn erfolgreich) |
 
 Lina, am Ende bekommst du außerdem eine Zusammenfassung mit Mittelwert, Standardabweichung und Spannweite der Release-Winkel über alle Videos:
 
@@ -143,6 +147,41 @@ Summary: 12/12 videos analyzed successfully
 ```
 
 **Hinweis, Lina:** Im Batch-Modus werden keine annotierten Videos erzeugt und kein Vorschaufenster geöffnet, damit die Verarbeitung schnell durchläuft. Unterstützte Formate: `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`.
+
+#### Batch-Kalibrierung (`batch_config.yaml`)
+
+Lina, wenn deine Videos unterschiedliche Lichtverhältnisse oder Klebebandfarben haben, kannst du in `batch_config.yaml` für jedes Video eigene HSV-Werte hinterlegen. Videos, die dort nicht aufgeführt sind, verwenden die Standardwerte aus `config.yaml`.
+
+```yaml
+# batch_config.yaml
+wurf_01.mp4:
+  hsv_lower: [35, 100, 100]
+  hsv_upper: [85, 255, 255]
+
+wurf_02.mp4:
+  hsv_lower: [170, 100, 100]
+  hsv_upper: [180, 255, 255]
+  hsv_lower2: [0, 100, 100]
+  hsv_upper2: [10, 255, 255]
+
+wurf_03.mp4:
+  hsv_lower: [100, 150, 100]
+  hsv_upper: [130, 255, 255]
+  thrower_faces_right: false
+```
+
+Lina, du kannst die Werte auch direkt beim Kalibrieren speichern — drücke einfach **`b`** im Kalibrierungswerkzeug:
+
+```bash
+python calibrate.py videos/wurf_01.mp4 --frame 50
+# Regler einstellen, dann 'b' drücken → Werte landen in batch_config.yaml
+python calibrate.py videos/wurf_02.mp4 --frame 50
+# Regler einstellen, dann 'b' drücken → wird zum selben File hinzugefügt
+```
+
+Lina, neben HSV-Werten kannst du pro Video auch `min_marker_area`, `max_marker_area`, `roi` und `thrower_faces_right` überschreiben.
+
+Wenn bei einem Video die Marker nicht erkannt werden konnten, wird es in der CSV als Fehler markiert (Spalte `error`), und die Pipeline läuft mit dem nächsten Video weiter — kein Abbruch des gesamten Batch-Laufs.
 
 ### 4. Ergebnis ansehen
 
@@ -182,13 +221,14 @@ Lina, alle Parameter lassen sich in der `config.yaml` anpassen, ohne Python-Code
 Lina, hier die verfügbaren Optionen beim Aufruf:
 
 ```
-python main.py [--video PFAD] [--batch ORDNER] [--output-csv PFAD] [--config PFAD] [--no-preview]
+python main.py [--video PFAD] [--batch ORDNER] [--batch-config PFAD] [--output-csv PFAD] [--config PFAD] [--no-preview]
 ```
 
 | Option | Beschreibung |
 |---|---|
 | `--video PFAD` | Videopfad (überschreibt Wert aus config.yaml) |
 | `--batch ORDNER` | Batch-Modus: alle Videos im Ordner analysieren, Ergebnisse als CSV |
+| `--batch-config PFAD` | Per-Video HSV-Kalibrierung (Standard: `batch_config.yaml`) |
 | `--output-csv PFAD` | CSV-Ausgabepfad im Batch-Modus (Standard: `results.csv`) |
 | `--config PFAD` | Pfad zur Konfigurationsdatei (Standard: `config.yaml`) |
 | `--no-preview` | Kein Vorschaufenster anzeigen |
@@ -200,6 +240,7 @@ Lina, hier ist ein Überblick über alle Dateien im Projekt und was sie machen:
 ```
 Darterkennung/
 ├── config.yaml          — Alle einstellbaren Parameter
+├── batch_config.yaml    — Per-Video HSV-Kalibrierung für Batch-Modus
 ├── requirements.txt     — Python-Abhängigkeiten
 ├── main.py              — Hauptprogramm und Pipeline-Steuerung
 ├── calibrate.py         — Interaktives HSV-Kalibrierungswerkzeug

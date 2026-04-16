@@ -285,6 +285,29 @@ hsv_upper2: [10, 255, 255]
 - Lina, verwende ein Video mit manueller Belichtung (kein Auto-Exposure)
 - Alternativ: HSV-Werte etwas großzügiger einstellen (größerer Bereich)
 
+## Zitierung
+
+Lina, wenn du dieses Projekt in einer wissenschaftlichen Arbeit, einem Bericht oder einer Präsentation verwendest, zitiere es bitte wie folgt:
+
+**APA:**
+
+> Körner, F. (2026). *DartElbow: Automatische Ellbogenwinkel-Erkennung beim Dartwurf* [Software]. GitHub. https://github.com/FritzKoerner/DartElbow
+
+**BibTeX:**
+
+```bibtex
+@software{koerner2026dartelbow,
+  author       = {Körner, Fritz},
+  title        = {DartElbow: Automatische Ellbogenwinkel-Erkennung beim Dartwurf},
+  year         = {2026},
+  url          = {https://github.com/FritzKoerner/DartElbow},
+}
+```
+
+**IEEE:**
+
+> F. Körner, "DartElbow: Automatische Ellbogenwinkel-Erkennung beim Dartwurf," 2026. [Online]. Available: https://github.com/FritzKoerner/DartElbow
+
 ---
 
 Lina, bei Fragen oder Problemen melde dich einfach!

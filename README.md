@@ -1,10 +1,10 @@
 # Darterkennung — Ellbogenwinkel-Erkennung beim Dartwurf
 
-Dieses Projekt analysiert Seitenansicht-Videos von Dartwürfen und erkennt automatisch den **Ellbogenwinkel im Moment des Loslassens** (Release). Die Gelenke (Schulter, Ellbogen, Handgelenk) werden dabei über farbige Klebeband-Markierungen erkannt und über alle Frames hinweg verfolgt.
+Hallo Lina! Dieses Projekt analysiert Seitenansicht-Videos von Dartwürfen und erkennt automatisch den **Ellbogenwinkel im Moment des Loslassens** (Release). Die Gelenke (Schulter, Ellbogen, Handgelenk) werden dabei über farbige Klebeband-Markierungen erkannt und über alle Frames hinweg verfolgt.
 
 ## Funktionsweise
 
-Die Pipeline arbeitet in mehreren Schritten:
+Lina, die Pipeline arbeitet in mehreren Schritten — hier ein kurzer Überblick, damit du weißt, was im Hintergrund passiert:
 
 1. **Marker-Erkennung**: Das Bild wird zunächst mit einem Gaußschen Weichzeichner vorverarbeitet, dann wird farbiges Klebeband im HSV-Farbraum über Schwellenwerte isoliert. Konturen werden erkannt und deren Mittelpunkte berechnet. Für rotes Klebeband wird ein doppelter HSV-Bereich unterstützt (da Rot im HSV-Farbraum um 0/180 herum liegt).
 2. **Gelenk-Zuordnung**: Die drei erkannten Marker werden den Gelenken Schulter, Ellbogen und Handgelenk zugeordnet — anhand ihrer Position im Bild (Schulter ist oben, Handgelenk ist vorne).
@@ -15,12 +15,16 @@ Die Pipeline arbeitet in mehreren Schritten:
 
 ## Voraussetzungen
 
+Lina, bevor du loslegen kannst, stelle sicher, dass du Folgendes hast:
+
 - Python 3.10+
 - Kamera-Seitenansicht des Werfers
 - Drei farbige Klebeband-Markierungen an **Schulter**, **Ellbogen** und **Handgelenk**
 - Das Klebeband sollte eine auffällige Farbe haben (z.B. Neongrün, Rot), die sich gut vom Hintergrund abhebt
 
 ## Installation
+
+Lina, öffne ein Terminal und führe folgende Befehle aus:
 
 ```bash
 cd Darterkennung
@@ -35,6 +39,8 @@ Die benötigten Pakete sind:
 
 ## Schnellstart
 
+Lina, folge einfach diesen vier Schritten der Reihe nach:
+
 ### 1. Video vorbereiten
 
 Lege dein Video in einen Ordner (z.B. `videos/`) und passe den Pfad in `config.yaml` an:
@@ -43,7 +49,7 @@ Lege dein Video in einen Ordner (z.B. `videos/`) und passe den Pfad in `config.y
 video_path: "videos/mein_wurf.mp4"
 ```
 
-**Wichtig:** Das Video sollte eine konstante Framerate haben. Falls nicht, vorher mit ffmpeg konvertieren:
+**Wichtig, Lina:** Das Video sollte eine konstante Framerate haben. Falls nicht, vorher mit ffmpeg konvertieren:
 
 ```bash
 ffmpeg -i input.mp4 -r 30 output.mp4
@@ -51,7 +57,7 @@ ffmpeg -i input.mp4 -r 30 output.mp4
 
 ### 2. Farbkalibrierung
 
-Bevor die Pipeline laufen kann, müssen die HSV-Farbwerte für das Klebeband eingestellt werden. Dafür gibt es ein interaktives Werkzeug:
+Lina, bevor die Pipeline laufen kann, müssen die HSV-Farbwerte für das Klebeband eingestellt werden. Dafür gibt es ein interaktives Werkzeug:
 
 ```bash
 python calibrate.py videos/mein_wurf.mp4 --frame 50
@@ -62,9 +68,11 @@ Es öffnet sich ein Fenster mit Schiebereglern für die HSV-Werte. Stelle die Re
 - Drücke **`s`**, um die Werte auszugeben — kopiere sie in `config.yaml`
 - Drücke **`q`**, um zu beenden
 
-**Tipp:** Probiere verschiedene Frames aus (`--frame 0`, `--frame 100`, etc.), um sicherzustellen, dass die Werte über das ganze Video funktionieren.
+**Tipp für dich, Lina:** Probiere verschiedene Frames aus (`--frame 0`, `--frame 100`, etc.), um sicherzustellen, dass die Werte über das ganze Video funktionieren.
 
-### 3. Pipeline ausführen
+### 3. Pipeline ausführen (Einzelvideo)
+
+Lina, jetzt kannst du die eigentliche Analyse starten:
 
 ```bash
 python main.py
@@ -97,9 +105,48 @@ Annotated video saved to: output/annotated.mp4
 Done.
 ```
 
+### 3b. Batch-Modus (mehrere Videos auf einmal)
+
+Lina, wenn du mehrere Würfe auf einmal analysieren willst, nutze den Batch-Modus. Lege alle Videos in einen Ordner und starte:
+
+```bash
+python main.py --batch videos/
+```
+
+Das analysiert alle Videos im Ordner und schreibt die Ergebnisse in eine CSV-Datei. Lina, den Ausgabepfad für die CSV kannst du mit `--output-csv` festlegen:
+
+```bash
+python main.py --batch videos/ --output-csv ergebnisse.csv
+```
+
+Die CSV-Datei enthält folgende Spalten:
+
+| Spalte | Beschreibung |
+|---|---|
+| `video` | Dateiname des Videos |
+| `release_angle` | Ellbogenwinkel beim Release (in Grad) |
+| `release_frame` | Frame-Nummer des Release |
+| `release_time` | Zeitpunkt des Release (in Sekunden) |
+| `angle_min` | Minimaler Ellbogenwinkel im Video |
+| `angle_max` | Maximaler Ellbogenwinkel im Video |
+| `detection_rate` | Anteil der Frames mit erfolgreicher Marker-Erkennung (%) |
+| `fps` | Framerate des Videos |
+| `total_frames` | Gesamtanzahl Frames |
+
+Lina, am Ende bekommst du außerdem eine Zusammenfassung mit Mittelwert, Standardabweichung und Spannweite der Release-Winkel über alle Videos:
+
+```
+Summary: 12/12 videos analyzed successfully
+  Release angle mean: 138.4 degrees
+  Release angle std:  8.2 degrees
+  Release angle range: 124.1 - 152.3 degrees
+```
+
+**Hinweis, Lina:** Im Batch-Modus werden keine annotierten Videos erzeugt und kein Vorschaufenster geöffnet, damit die Verarbeitung schnell durchläuft. Unterstützte Formate: `.mp4`, `.avi`, `.mov`, `.mkv`, `.webm`.
+
 ### 4. Ergebnis ansehen
 
-Das annotierte Video wird unter `output/annotated.mp4` gespeichert. Darin sind eingezeichnet:
+Lina, das annotierte Video wird unter `output/annotated.mp4` gespeichert. Darin sind eingezeichnet:
 
 - **Farbige Kreise** an den Gelenkpositionen (Rot = Schulter, Grün = Ellbogen, Blau = Handgelenk)
 - **Weiße Linien** zwischen Schulter–Ellbogen und Ellbogen–Handgelenk (Arm-Skelett)
@@ -108,7 +155,7 @@ Das annotierte Video wird unter `output/annotated.mp4` gespeichert. Darin sind e
 
 ## Konfiguration (`config.yaml`)
 
-Alle Parameter lassen sich in der `config.yaml` anpassen, ohne Python-Code ändern zu müssen:
+Lina, alle Parameter lassen sich in der `config.yaml` anpassen, ohne Python-Code ändern zu müssen:
 
 | Parameter | Beschreibung | Standardwert |
 |---|---|---|
@@ -132,17 +179,23 @@ Alle Parameter lassen sich in der `config.yaml` anpassen, ohne Python-Code ände
 
 ## Kommandozeilen-Optionen
 
+Lina, hier die verfügbaren Optionen beim Aufruf:
+
 ```
-python main.py [--video PFAD] [--config PFAD] [--no-preview]
+python main.py [--video PFAD] [--batch ORDNER] [--output-csv PFAD] [--config PFAD] [--no-preview]
 ```
 
 | Option | Beschreibung |
 |---|---|
 | `--video PFAD` | Videopfad (überschreibt Wert aus config.yaml) |
+| `--batch ORDNER` | Batch-Modus: alle Videos im Ordner analysieren, Ergebnisse als CSV |
+| `--output-csv PFAD` | CSV-Ausgabepfad im Batch-Modus (Standard: `results.csv`) |
 | `--config PFAD` | Pfad zur Konfigurationsdatei (Standard: `config.yaml`) |
 | `--no-preview` | Kein Vorschaufenster anzeigen |
 
 ## Projektstruktur
+
+Lina, hier ist ein Überblick über alle Dateien im Projekt und was sie machen:
 
 ```
 Darterkennung/
@@ -159,24 +212,26 @@ Darterkennung/
 
 ## Fehlerbehebung
 
+Lina, falls etwas nicht funktioniert, findest du hier die häufigsten Probleme und Lösungen:
+
 ### „Could not detect 3 markers in any frame"
-Die HSV-Farbwerte passen nicht. Starte `python calibrate.py <video>` und stelle die Werte neu ein.
+Lina, die HSV-Farbwerte passen nicht. Starte `python calibrate.py <video>` und stelle die Werte neu ein.
 
 ### Marker werden verwechselt (Schulter/Ellbogen/Handgelenk vertauscht)
-- Prüfe, ob `thrower_faces_right` korrekt gesetzt ist
+- Lina, prüfe ob `thrower_faces_right` korrekt gesetzt ist
 - Wenn der Werfer nach links schaut, setze den Wert auf `false`
 
 ### Release wird nicht erkannt
-- Senke `velocity_peak_prominence` in der config (z.B. auf `20.0`)
+- Lina, senke `velocity_peak_prominence` in der config (z.B. auf `20.0`)
 - Prüfe, ob das Handgelenk in den relevanten Frames erkannt wird (im annotierten Video sichtbar)
 
 ### Tracking springt / Marker gehen verloren
-- Erhöhe `max_jump`, falls sich die Marker schnell bewegen
+- Lina, erhöhe `max_jump`, falls sich die Marker schnell bewegen
 - Passe `min_marker_area` / `max_marker_area` an, falls Marker zu klein oder zu groß sind
 - Nutze `roi`, um den Bildausschnitt einzuschränken und Störquellen auszuschließen
 
 ### Rotes Klebeband wird nicht erkannt
-Rot liegt im HSV-Farbraum an beiden Enden der Hue-Achse (um 0 und 180). Ein einzelner HSV-Bereich reicht nicht aus. Aktiviere den zweiten Bereich in `config.yaml`:
+Lina, Rot liegt im HSV-Farbraum an beiden Enden der Hue-Achse (um 0 und 180). Ein einzelner HSV-Bereich reicht nicht aus. Aktiviere den zweiten Bereich in `config.yaml`:
 
 ```yaml
 hsv_lower: [170, 100, 100]
@@ -186,5 +241,9 @@ hsv_upper2: [10, 255, 255]
 ```
 
 ### Schlechte Erkennung bei wechselndem Licht
-- Verwende ein Video mit manueller Belichtung (kein Auto-Exposure)
+- Lina, verwende ein Video mit manueller Belichtung (kein Auto-Exposure)
 - Alternativ: HSV-Werte etwas großzügiger einstellen (größerer Bereich)
+
+---
+
+Lina, bei Fragen oder Problemen melde dich einfach!

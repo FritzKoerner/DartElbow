@@ -2,9 +2,12 @@
 
 Detects colored tape markers on shoulder/elbow/wrist, tracks them across
 video frames, and reports the elbow angle at the moment of dart release.
+
+Supports single-video and batch mode (--batch <folder> → CSV output).
 """
 
 import argparse
+import csv
 import os
 import sys
 
@@ -19,6 +22,8 @@ from angle import compute_elbow_angle
 from release import detect_release
 from visualization import draw_overlay, create_video_writer
 
+VIDEO_EXTENSIONS = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
+
 
 def load_config(path):
     with open(path, "r") as f:
@@ -30,6 +35,15 @@ def parse_args():
         description="Detect elbow angle at dart release from side-view video."
     )
     parser.add_argument("--video", help="Path to input video (overrides config)")
+    parser.add_argument(
+        "--batch",
+        help="Process all videos in a folder and output a CSV with results",
+    )
+    parser.add_argument(
+        "--output-csv",
+        default="results.csv",
+        help="CSV output path for batch mode (default: results.csv)",
+    )
     parser.add_argument("--config", default="config.yaml", help="Config file path")
     parser.add_argument(
         "--no-preview", action="store_true", help="Disable live preview window"
@@ -52,10 +66,8 @@ def smooth_positions(raw_positions, window, polyorder):
 
     valid = ~np.isnan(xs)
     if valid.sum() < window:
-        # Not enough data points to smooth — return as-is
         return raw_positions
 
-    # Interpolate gaps for smoothing, then apply filter
     indices = np.arange(n)
     valid_idx = indices[valid]
 
@@ -74,15 +86,11 @@ def smooth_positions(raw_positions, window, polyorder):
     return result
 
 
-def main():
-    args = parse_args()
-    cfg = load_config(args.config)
+def analyze_video(video_path, cfg, write_video=True, show_preview=False):
+    """Run the full analysis pipeline on a single video.
 
-    video_path = args.video or cfg["video_path"]
-    if not os.path.isfile(video_path):
-        print(f"Error: Video file not found: {video_path}")
-        sys.exit(1)
-
+    Returns a dict with results, or None if analysis failed.
+    """
     hsv_lower = np.array(cfg["hsv_lower"], dtype=np.uint8)
     hsv_upper = np.array(cfg["hsv_upper"], dtype=np.uint8)
     hsv_lower2 = np.array(cfg["hsv_lower2"], dtype=np.uint8) if cfg.get("hsv_lower2") else None
@@ -94,26 +102,20 @@ def main():
     smooth_win = cfg["smoothing_window"]
     smooth_poly = cfg["smoothing_polyorder"]
     roi = cfg.get("roi")
-    show_preview = cfg["show_preview"] and not args.no_preview
 
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
-        print(f"Error: Cannot open video: {video_path}")
-        sys.exit(1)
+        print(f"  Error: Cannot open video: {video_path}")
+        return None
 
     fps = cap.get(cv2.CAP_PROP_FPS)
     total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-    print(f"Video: {video_path}")
-    print(f"FPS: {fps:.1f}, Frames: {total_frames}, Duration: {total_frames/fps:.1f}s")
-    print(f"Resolution: {width}x{height}")
-    print()
+    print(f"  FPS: {fps:.1f}, Frames: {total_frames}, Duration: {total_frames/fps:.1f}s")
 
     # --- Pass 1: Detect and track markers ---
-    print("Pass 1: Detecting and tracking markers...")
-
     raw_positions = {"shoulder": [], "elbow": [], "wrist": []}
     prev_positions = None
     initialized = False
@@ -125,7 +127,6 @@ def main():
         if not ret:
             break
 
-        # Apply ROI crop if configured
         if roi is not None:
             rx, ry, rw, rh = roi
             work_frame = frame[ry : ry + rh, rx : rx + rw]
@@ -138,12 +139,10 @@ def main():
 
         if not initialized:
             if len(centroids) == 3:
-                # Offset centroids back to full-frame coordinates
                 centroids_full = [(c[0] + rx, c[1] + ry) for c in centroids]
                 prev_positions = initial_assignment(centroids_full, faces_right)
                 initialized = True
                 for joint in raw_positions:
-                    # Backfill with None for frames before initialization
                     raw_positions[joint] = [None] * frame_idx
                     raw_positions[joint].append(prev_positions[joint])
                 detected_count += 1
@@ -155,7 +154,6 @@ def main():
             current = track_frame(prev_positions, centroids_full, max_jump)
             for joint in raw_positions:
                 raw_positions[joint].append(current.get(joint))
-            # Update prev_positions only for joints that were tracked
             for joint, pos in current.items():
                 if pos is not None:
                     prev_positions[joint] = pos
@@ -167,28 +165,20 @@ def main():
     cap.release()
 
     if not initialized:
-        print("Error: Could not detect 3 markers in any frame. Check HSV ranges.")
-        print("  Run: python calibrate.py <video_path>")
-        sys.exit(1)
+        print("  Error: Could not detect 3 markers in any frame.")
+        return None
 
-    print(
-        f"Markers detected in {detected_count}/{frame_idx} frames "
-        f"({100 * detected_count / frame_idx:.1f}%)"
-    )
+    detection_rate = 100 * detected_count / frame_idx
+    print(f"  Markers detected in {detected_count}/{frame_idx} frames ({detection_rate:.1f}%)")
 
     # --- Post-pass: Smooth, compute angles, detect release ---
-    print("Smoothing position tracks...")
-
-    # Interpolate short gaps
     for joint in raw_positions:
         raw_positions[joint] = interpolate_gaps(raw_positions[joint], max_gap=5)
 
-    # Smooth
     smoothed = {}
     for joint in raw_positions:
         smoothed[joint] = smooth_positions(raw_positions[joint], smooth_win, smooth_poly)
 
-    # Compute elbow angle per frame
     angles = []
     for i in range(frame_idx):
         s = smoothed["shoulder"][i]
@@ -199,7 +189,6 @@ def main():
         else:
             angles.append(None)
 
-    # Detect release
     release_frame = detect_release(
         smoothed["wrist"],
         fps,
@@ -210,71 +199,194 @@ def main():
         cfg["velocity_component"],
     )
 
-    print()
-    if release_frame is not None and release_frame < len(angles):
-        release_time = release_frame / fps
-        release_angle = angles[release_frame]
-        print(f"Release detected at frame {release_frame} (t = {release_time:.3f}s)")
-        if release_angle is not None:
-            print(f"Elbow angle at release: {release_angle:.1f} degrees")
-        else:
-            print("Warning: Could not compute elbow angle at release frame (missing data)")
+    # Build result
+    result = {
+        "video": video_path,
+        "fps": fps,
+        "total_frames": total_frames,
+        "detection_rate": detection_rate,
+        "release_frame": None,
+        "release_time": None,
+        "release_angle": None,
+        "angle_min": None,
+        "angle_max": None,
+    }
 
-        valid_angles = [a for a in angles if a is not None]
-        if valid_angles:
-            print(
-                f"Elbow angle range during video: "
-                f"{min(valid_angles):.1f} - {max(valid_angles):.1f} degrees"
-            )
+    valid_angles = [a for a in angles if a is not None]
+    if valid_angles:
+        result["angle_min"] = min(valid_angles)
+        result["angle_max"] = max(valid_angles)
+
+    if release_frame is not None and release_frame < len(angles):
+        result["release_frame"] = release_frame
+        result["release_time"] = release_frame / fps
+        result["release_angle"] = angles[release_frame]
+        print(f"  Release at frame {release_frame} (t = {result['release_time']:.3f}s)")
+        if result["release_angle"] is not None:
+            print(f"  Elbow angle at release: {result['release_angle']:.1f} degrees")
+        else:
+            print("  Warning: Could not compute angle at release frame")
     else:
-        print("Warning: Could not detect release moment.")
-        print("  Try adjusting velocity_peak_prominence in config.yaml")
+        print("  Warning: Could not detect release moment")
 
     # --- Pass 2: Write annotated video ---
-    output_path = cfg.get("output_video")
+    output_path = cfg.get("output_video") if write_video else None
     if output_path or show_preview:
-        print()
-        print("Pass 2: Writing annotated video...")
+        if output_path:
+            # In batch mode, put annotated videos in output/ named after the source
+            base = os.path.splitext(os.path.basename(video_path))[0]
+            out_dir = os.path.dirname(output_path) or "output"
+            os.makedirs(out_dir, exist_ok=True)
+            output_path = os.path.join(out_dir, f"{base}_annotated.mp4")
 
         cap = cv2.VideoCapture(video_path)
         writer = None
         if output_path:
-            os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
             writer = create_video_writer(output_path, fps, (width, height))
 
-        frame_idx = 0
+        fi = 0
         while True:
             ret, frame = cap.read()
             if not ret:
                 break
-
-            positions = {
-                joint: smoothed[joint][frame_idx] for joint in smoothed
-            }
-            angle = angles[frame_idx]
-            is_release = frame_idx == release_frame
-
+            positions = {joint: smoothed[joint][fi] for joint in smoothed}
+            angle = angles[fi]
+            is_release = fi == release_frame
             draw_overlay(frame, positions, angle, is_release)
-
             if writer is not None:
                 writer.write(frame)
-
             if show_preview:
                 cv2.imshow("Dart Throw Analysis", frame)
-                key = cv2.waitKey(1) & 0xFF
-                if key == ord("q"):
+                if cv2.waitKey(1) & 0xFF == ord("q"):
                     break
-
-            frame_idx += 1
+            fi += 1
 
         cap.release()
         if writer is not None:
             writer.release()
-            print(f"Annotated video saved to: {output_path}")
+            print(f"  Annotated video: {output_path}")
         if show_preview:
             cv2.destroyAllWindows()
 
+    return result
+
+
+def run_single(args, cfg):
+    """Run pipeline on a single video."""
+    video_path = args.video or cfg["video_path"]
+    if not os.path.isfile(video_path):
+        print(f"Error: Video file not found: {video_path}")
+        sys.exit(1)
+
+    show_preview = cfg["show_preview"] and not args.no_preview
+    print(f"Video: {video_path}")
+    result = analyze_video(video_path, cfg, write_video=True, show_preview=show_preview)
+
+    if result is None:
+        print("\nAnalysis failed. Run: python calibrate.py <video_path>")
+        sys.exit(1)
+
+    if result["angle_min"] is not None:
+        print(f"  Angle range: {result['angle_min']:.1f} - {result['angle_max']:.1f} degrees")
     print("\nDone.")
+
+
+def run_batch(args, cfg):
+    """Process all videos in a folder and write results to CSV."""
+    folder = args.batch
+    if not os.path.isdir(folder):
+        print(f"Error: Folder not found: {folder}")
+        sys.exit(1)
+
+    video_files = sorted(
+        f for f in os.listdir(folder)
+        if os.path.splitext(f)[1].lower() in VIDEO_EXTENSIONS
+    )
+
+    if not video_files:
+        print(f"Error: No video files found in {folder}")
+        print(f"  Supported formats: {', '.join(VIDEO_EXTENSIONS)}")
+        sys.exit(1)
+
+    print(f"Batch mode: {len(video_files)} videos in {folder}")
+    print(f"Output CSV: {args.output_csv}")
+    print()
+
+    results = []
+    for i, filename in enumerate(video_files, 1):
+        video_path = os.path.join(folder, filename)
+        print(f"[{i}/{len(video_files)}] {filename}")
+        result = analyze_video(video_path, cfg, write_video=False, show_preview=False)
+        if result is not None:
+            result["video"] = filename
+            results.append(result)
+        else:
+            results.append({
+                "video": filename,
+                "fps": None,
+                "total_frames": None,
+                "detection_rate": None,
+                "release_frame": None,
+                "release_time": None,
+                "release_angle": None,
+                "angle_min": None,
+                "angle_max": None,
+            })
+        print()
+
+    # Write CSV
+    fieldnames = [
+        "video",
+        "release_angle",
+        "release_frame",
+        "release_time",
+        "angle_min",
+        "angle_max",
+        "detection_rate",
+        "fps",
+        "total_frames",
+    ]
+    with open(args.output_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
+        writer.writeheader()
+        for r in results:
+            row = {}
+            for key in fieldnames:
+                val = r.get(key)
+                if isinstance(val, float):
+                    row[key] = f"{val:.2f}"
+                else:
+                    row[key] = val if val is not None else ""
+            writer.writerow(row)
+
+    print(f"Results written to {args.output_csv}")
+
+    # Print summary table
+    successful = [r for r in results if r["release_angle"] is not None]
+    failed = len(results) - len(successful)
+    print(f"\nSummary: {len(successful)}/{len(results)} videos analyzed successfully", end="")
+    if failed:
+        print(f" ({failed} failed)")
+    else:
+        print()
+
+    if successful:
+        angles = [r["release_angle"] for r in successful]
+        print(f"  Release angle mean: {np.mean(angles):.1f} degrees")
+        print(f"  Release angle std:  {np.std(angles):.1f} degrees")
+        print(f"  Release angle range: {min(angles):.1f} - {max(angles):.1f} degrees")
+
+    print("\nDone.")
+
+
+def main():
+    args = parse_args()
+    cfg = load_config(args.config)
+
+    if args.batch:
+        run_batch(args, cfg)
+    else:
+        run_single(args, cfg)
 
 
 if __name__ == "__main__":
